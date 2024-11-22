@@ -48,6 +48,12 @@
             margin-top: 20px;
             font-size: 18px;
         }
+        .history {
+            margin-top: 20px;
+            font-size: 16px;
+            text-align: left;
+            padding: 0 20px;
+        }
     </style>
 </head>
 <body>
@@ -81,19 +87,19 @@
     <p id="currentBet">Current Bet: 0 BNB on Low/High</p>
 </div>
 
-<div id="depositSection" style="display: none;">
-    <h2>Deposit BNB to Play</h2>
-    <input type="number" id="depositAmount" min="0.00000001" step="0.00000001" placeholder="Deposit Amount (BNB)">
-    <br>
-    <button class="btn" onclick="depositBNB()">Deposit BNB</button>
-</div>
-
 <!-- Withdraw Section -->
 <div id="withdrawSection" style="display: none;">
     <h2>Withdraw Your Balance</h2>
     <input type="number" id="withdrawAmount" min="0.00000001" step="0.00000001" placeholder="Withdraw Amount (BNB)">
     <br>
     <button class="btn" onclick="withdrawBNB()">Withdraw BNB</button>
+</div>
+
+<div class="history">
+    <h3>Roll History</h3>
+    <ul id="rollHistoryList">
+        <!-- Roll history will be displayed here -->
+    </ul>
 </div>
 
 <div class="message" id="message"></div>
@@ -105,6 +111,8 @@
     let userAccount;
     let contractAddress = '0xfEAeD50afe795e2B66BC48D5a6F5C7BaFCB56834'; // Replace with your contract address
     let contractABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"diceRoll","type":"uint256"},{"indexed":false,"internalType":"bool","name":"won","type":"bool"},{"indexed":false,"internalType":"uint256","name":"payout","type":"uint256"}],"name":"DiceRolled","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Withdraw","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"balances","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"getBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getHouseBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"houseFee","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"betAmount","type":"uint256"},{"internalType":"bool","name":"betHigh","type":"bool"}],"name":"rollDice","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"newFee","type":"uint256"}],"name":"setHouseFee","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+
+    let rollHistory = [];
 
     // Connect to MetaMask and the contract
     async function connectWallet() {
@@ -120,7 +128,6 @@
                 
                 // Show bet, deposit, and withdraw sections
                 document.getElementById('betSection').style.display = 'block';
-                document.getElementById('depositSection').style.display = 'block';
                 document.getElementById('withdrawSection').style.display = 'block';
 
                 // Update balance and game info
@@ -146,7 +153,6 @@
         document.getElementById('connectBtn').style.display = 'inline-block';
         document.getElementById('disconnectBtn').style.display = 'none';
         document.getElementById('betSection').style.display = 'none';
-        document.getElementById('depositSection').style.display = 'none';
         document.getElementById('withdrawSection').style.display = 'none';
         document.getElementById('balance').textContent = '0 BNB';
         document.getElementById('totalContractBalance').textContent = 'Total Contract Balance: 0 BNB';
@@ -167,7 +173,7 @@
         }
     }
 
-    // Update game info
+    // Update game info like total contract balance
     async function updateGameInfo() {
         try {
             const totalBalanceInWei = await contract.methods.getHouseBalance().call();
@@ -178,24 +184,55 @@
         }
     }
 
-    // Deposit BNB to the contract
-    async function depositBNB() {
-        const depositAmount = parseFloat(document.getElementById('depositAmount').value);
-        if (isNaN(depositAmount) || depositAmount <= 0) {
-            alert("Invalid deposit amount");
+    // Roll Dice Function (Simplified)
+    async function rollDice() {
+        const betAmount = parseFloat(document.getElementById('betAmount').value);
+        if (isNaN(betAmount) || betAmount <= 0) {
+            alert("Invalid bet amount");
             return;
         }
 
+        const betChoice = document.getElementById('betChoice').value;
+        const betHigh = betChoice === 'hi';
+
         try {
-            const amountInWei = web3.utils.toWei(depositAmount.toString(), 'ether');
-            await contract.methods.deposit().send({ from: userAccount, value: amountInWei });
-            alert("Deposit successful!");
-            updateBalance();
-            updateGameInfo();
+            const betAmountInWei = web3.utils.toWei(betAmount.toString(), 'ether');
+            await contract.methods.rollDice(betAmountInWei, betHigh).send({ from: userAccount });
+
+            // Get the result from the event listener
+            contract.events.DiceRolled({ filter: { player: userAccount } })
+                .on('data', event => {
+                    const diceRoll = event.returnValues.diceRoll;
+                    const won = event.returnValues.won;
+                    const payout = web3.utils.fromWei(event.returnValues.payout, 'ether');
+
+                    // Update the last roll result
+                    document.getElementById('lastRollResult').textContent = `Last Roll: ${diceRoll}`;
+                    document.getElementById('lastRollOutcome').textContent = `Last Roll Outcome: ${won ? 'Won' : 'Lost'} - Payout: ${payout} BNB`;
+
+                    // Add to roll history
+                    const rollOutcome = won ? 'Won' : 'Lost';
+                    rollHistory.push(`Rolled: ${diceRoll} - Outcome: ${rollOutcome}`);
+                    updateRollHistory();
+
+                    updateBalance();
+                    updateGameInfo();
+                });
         } catch (error) {
-            console.error("Error depositing BNB:", error);
-            alert("Failed to deposit BNB.");
+            console.error("Error rolling dice:", error);
+            alert("Failed to roll dice.");
         }
+    }
+
+    // Update roll history display
+    function updateRollHistory() {
+        const rollHistoryList = document.getElementById('rollHistoryList');
+        rollHistoryList.innerHTML = '';
+        rollHistory.slice(-5).forEach((roll, index) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = roll;
+            rollHistoryList.appendChild(listItem);
+        });
     }
 
     // Withdraw BNB from the contract
@@ -222,30 +259,8 @@
             alert("Failed to withdraw BNB.");
         }
     }
-
-    // Roll Dice Function (Simplified)
-    async function rollDice() {
-        const betAmount = parseFloat(document.getElementById('betAmount').value);
-        if (isNaN(betAmount) || betAmount <= 0) {
-            alert("Invalid bet amount");
-            return;
-        }
-
-        const betChoice = document.getElementById('betChoice').value;
-        const betHigh = betChoice === 'hi';
-
-        try {
-            const betAmountInWei = web3.utils.toWei(betAmount.toString(), 'ether');
-            await contract.methods.rollDice(betAmountInWei, betHigh).send({ from: userAccount });
-            alert("Dice rolled!");
-            updateBalance();
-            updateGameInfo();
-        } catch (error) {
-            console.error("Error rolling dice:", error);
-            alert("Failed to roll dice.");
-        }
-    }
 </script>
 
 </body>
 </html>
+
